@@ -3,6 +3,7 @@ import type { HTMLAttributes, RefObject } from 'react';
 
 export interface PreviewProps extends HTMLAttributes<HTMLCanvasElement> {
 	interval?: number;
+	highlightColumn?: number;
 	sourceRef: RefObject<HTMLCanvasElement | null>;
 	applyDither?: (imageData: ImageData) => void;
 }
@@ -10,6 +11,7 @@ export interface PreviewProps extends HTMLAttributes<HTMLCanvasElement> {
 export function Preview({
 	applyDither,
 	sourceRef,
+	highlightColumn,
 	interval = 100,
 	...rest
 }: PreviewProps) {
@@ -27,11 +29,23 @@ export function Preview({
 			if (!imageData) return;
 			applyDither?.(imageData);
 			previewCtx.putImageData(imageData, 0, 0);
+
+			if (typeof highlightColumn === 'number') {
+				previewCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+				previewCtx.fillRect(highlightColumn, 0, 1, imageData.height);
+				previewCtx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+				previewCtx.fillRect(
+					highlightColumn - 1,
+					0,
+					3,
+					imageData.height
+				);
+			}
 		}
 		render();
 		const intervalId = setInterval(render, interval);
 		return () => clearInterval(intervalId);
-	}, [applyDither, interval, sourceRef.current]);
+	}, [applyDither, interval, sourceRef.current, highlightColumn]);
 
 	return <canvas {...rest} ref={previewRef} />;
 }
