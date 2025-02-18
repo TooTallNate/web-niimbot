@@ -22,12 +22,10 @@
 		"clsx": "^2.1.1",
 		"debounce": "^2.2.0",
 		"isbot": "^5.1.17",
-		"konva": "^9.3.18",
 		"lucide-react": "^0.475.0",
 		"monaco-editor": "^0.52.2",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
-		"react-konva": "^19.0.2",
 		"react-router": "^7.1.5",
 		"tailwind-merge": "^3.0.1",
 		"tailwindcss-animate": "^1.0.7"

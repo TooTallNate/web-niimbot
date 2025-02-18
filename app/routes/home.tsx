@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Text, Circle, Line } from 'react-konva';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import debounce from 'debounce';
 import Editor from '@monaco-editor/react';
-import type Konva from 'konva';
 import type { Route } from './+types/home';
 import { PrinterClient, type Bit } from '~/lib/printer';
 import { atkinson, bayer, floydsteinberg, threshold } from '~/lib/monochrome';
@@ -14,7 +12,6 @@ import {
 	Select,
 	SelectContent,
 	SelectItem,
-	SelectLabel,
 	SelectTrigger,
 	SelectValue,
 } from '~/components/ui/select';
@@ -244,40 +241,8 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 				</div>
 			</div>
 
-			{/*
-      <Stage
-        width={240}
-        height={96}
-        className="inline-block bg-white"
-        ref={stageRef}
-      >
-        <Layer>
-          <Text text="Some text on canvas" fontSize={15} draggable />
-          <Rect
-            x={20}
-            y={50}
-            width={100}
-            height={100}
-            fill="red"
-            shadowBlur={10}
-            draggable
-          />
-          <Circle x={200} y={100} radius={50} fill="green" />
-          <Line
-            x={20}
-            y={200}
-            points={[0, 0, 100, 0, 100, 100]}
-            tension={0.5}
-            closed
-            stroke="black"
-            fillLinearGradientStartPoint={{ x: -50, y: -50 }}
-            fillLinearGradientEndPoint={{ x: 50, y: 50 }}
-            fillLinearGradientColorStops={[0, 'red', 1, 'yellow']}
-          />
-        </Layer>
-      </Stage>
-      */}
 			{error ? String(error) : null}
+
 			<Editor
 				height={400}
 				className="border shadow mt-4"
