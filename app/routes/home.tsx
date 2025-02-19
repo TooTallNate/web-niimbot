@@ -29,7 +29,11 @@ import reactIndexDecl from '~/assets/index.d.ts?raw';
 import jsxRuntimeDecl from '~/assets/jsx-runtime.d.ts?raw';
 import geistNormal from '~/assets/Geist-Regular.ttf?arraybuffer';
 import geistBold from '~/assets/Geist-Bold.ttf?arraybuffer';
-import { blobToDataURL, blobToImageDimensions } from '~/lib/util';
+import {
+	blobToDataURL,
+	blobToImageDimensions,
+	pasteSvgAsBlob,
+} from '~/lib/util';
 
 const DEFAULT_DITHER_ALGORITHM = 'atkinson';
 
@@ -219,12 +223,18 @@ export default function App() {
 		}
 	}, [code]);
 
-	const insertImage = useCallback(async (file: File, range: Monaco.Range) => {
+	const insertImage = useCallback(async (blob: Blob, range: Monaco.Range) => {
+		const canvas = canvasRef.current;
+		if (!canvas) return;
 		const editor = editorRef.current;
 		if (!editor) return;
-		const dataUrl = await blobToDataURL(file);
-		console.log(await blobToImageDimensions(file));
-		const text = `<img src="${dataUrl}" />`;
+		const dataUrl = await blobToDataURL(blob);
+		const dims = await blobToImageDimensions(blob);
+		const ratio = Math.max(
+			dims.width / canvas.width,
+			dims.height / canvas.height
+		);
+		const text = `<img height={${dims.height / ratio}} src="${dataUrl}" />`;
 		editor.executeEdits('insert', [
 			{
 				range,
@@ -386,11 +396,15 @@ export default function App() {
 					editor.getContainerDomNode().addEventListener(
 						'paste',
 						(event) => {
-							const file = event.clipboardData?.files[0];
+							const file =
+								event.clipboardData?.files[0] ||
+								pasteSvgAsBlob(event);
 							if (file?.type.startsWith('image/')) {
 								const target = editor.getPosition();
 								if (!target) return;
 								if (!monacoRef.current) return;
+								event.preventDefault();
+								event.stopPropagation();
 								const range = new monacoRef.current.Range(
 									target.lineNumber,
 									target.column,

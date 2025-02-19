@@ -21,10 +21,12 @@ export function Preview({
 		function render() {
 			const sourceCanvas = sourceRef.current;
 			if (!sourceCanvas) return;
-			const previewCtx = previewRef.current?.getContext('2d');
+			const previewCtx = previewRef.current?.getContext('2d', {
+				willReadFrequently: true,
+			});
 			if (!previewCtx) return;
 			const imageData = sourceCanvas
-				.getContext('2d')
+				.getContext('2d', { willReadFrequently: true })
 				?.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
 			if (!imageData) return;
 			applyDither?.(imageData);

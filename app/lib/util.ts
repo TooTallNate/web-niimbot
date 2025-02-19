@@ -49,3 +49,43 @@ export function blobToImageDimensions(blob: Blob): Promise<{
 		img.src = url;
 	});
 }
+
+export function pasteSvgAsBlob(event: ClipboardEvent): Blob | null {
+	const text = event.clipboardData?.getData('text/plain');
+	if (!text || !text.includes('<svg')) return null;
+
+	const parse = new DOMParser();
+	const doc = parse.parseFromString(text, 'text/html');
+	const svg = doc.querySelector('svg');
+	if (!svg) return null;
+
+	// As a small optimization, if the SVG only has one path which is filled
+	// white, then replace it with black so that it is visible on the canvas
+	const pathNodes = svg.querySelectorAll('path');
+	if (pathNodes.length === 1) {
+		const path = pathNodes[0];
+		const fill = normalizeColor(path.getAttribute('fill'));
+		if (fill === 'rgb(255, 255, 255)') {
+			pathNodes[0].setAttribute('fill', 'black');
+		}
+	}
+
+	return new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+}
+
+export function normalizeColor(color: string | null): string {
+	if (!color) return '';
+
+	const tempElement = document.createElement('div');
+	tempElement.style.color = color;
+	tempElement.style.display = 'none';
+	document.body.appendChild(tempElement);
+
+	// The computed color will be returned in rgb(a) format
+	const normalizedColor = getComputedStyle(tempElement).color;
+
+	// Clean up the temporary element
+	document.body.removeChild(tempElement);
+
+	return normalizedColor;
+}
