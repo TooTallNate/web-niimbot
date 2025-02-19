@@ -228,13 +228,16 @@ export default function App() {
 		if (!canvas) return;
 		const editor = editorRef.current;
 		if (!editor) return;
-		const dataUrl = await blobToDataURL(blob);
-		const dims = await blobToImageDimensions(blob);
+		const [dataUrl, dims] = await Promise.all([
+			blobToDataURL(blob),
+			blobToImageDimensions(blob),
+		]);
 		const ratio = Math.max(
 			dims.width / canvas.width,
 			dims.height / canvas.height
 		);
-		const text = `<img height={${dims.height / ratio}} src="${dataUrl}" />`;
+		const height = Math.floor(dims.height / ratio);
+		const text = `<img height={${height}} src="${dataUrl}" />`;
 		editor.executeEdits('insert', [
 			{
 				range,
