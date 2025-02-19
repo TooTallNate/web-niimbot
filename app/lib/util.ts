@@ -18,3 +18,34 @@ export function binaryStringToBytes(binaryString: string): Uint8Array {
 
 	return result;
 }
+
+export function blobToDataURL(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			resolve(reader.result as string);
+		};
+		reader.onerror = reject;
+		reader.readAsDataURL(blob);
+	});
+}
+
+export function blobToImageDimensions(blob: Blob): Promise<{
+	width: number;
+	height: number;
+}> {
+	return new Promise((resolve, reject) => {
+		const url = URL.createObjectURL(blob);
+		const img = new Image();
+		img.onload = () => {
+			const { width, height } = img;
+			URL.revokeObjectURL(url);
+			resolve({ width, height });
+		};
+		img.onerror = (err) => {
+			URL.revokeObjectURL(url);
+			reject(err);
+		};
+		img.src = url;
+	});
+}

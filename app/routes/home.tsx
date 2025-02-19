@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import debounce from 'debounce';
 import Editor from '@monaco-editor/react';
+import type * as Monaco from 'monaco-editor';
 //import { initVimMode } from 'monaco-vim';
 import satori from 'satori';
 import * as Babel from '@babel/standalone';
@@ -28,6 +29,7 @@ import reactIndexDecl from '~/assets/index.d.ts?raw';
 import jsxRuntimeDecl from '~/assets/jsx-runtime.d.ts?raw';
 import geistNormal from '~/assets/Geist-Regular.ttf?arraybuffer';
 import geistBold from '~/assets/Geist-Bold.ttf?arraybuffer';
+import { blobToDataURL, blobToImageDimensions } from '~/lib/util';
 
 const DEFAULT_DITHER_ALGORITHM = 'atkinson';
 
@@ -66,6 +68,8 @@ export default function App() {
   <div>This is a paragraph.</div>
 </div>
 `);
+	const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+	const monacoRef = useRef<typeof Monaco | null>(null);
 	const [error, setError] = useState<unknown>(null);
 	const [dimensions, setDimensions] = useState({ width: 313, height: 96 });
 	const [evalDelay, setEvalDelay] = useState(100);
@@ -78,7 +82,6 @@ export default function App() {
 	);
 
 	const print = async () => {
-		console.log('print');
 		const canvas = canvasRef.current;
 		if (!canvas) throw new Error('Failed to get canvas');
 		const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -121,7 +124,6 @@ export default function App() {
 			rotated.width,
 			rotated.height
 		);
-		//console.log({ imageData });
 		for (let y = 0; y < imageData.height; y++) {
 			const line: Bit[] = new Array(imageData.width);
 			for (let x = 0; x < imageData.width; x++) {
@@ -132,18 +134,15 @@ export default function App() {
 				const pixelB =
 					imageData.data[y * imageData.width * 4 + x * 4 + 2];
 				const pixel = (pixelR + pixelG + pixelB) / 3;
-				//console.log({ x, y, pixel, pixelR, pixelG, pixelB });
 				line[x] = pixel > 128 ? 0 : 1;
 			}
 			lines[y] = line;
 		}
-		console.log(lines);
 
 		const printer = await PrinterClient.connect('D11');
 		printer.startHeartbeat();
 
 		for await (const event of printer.printImage(lines)) {
-			console.log(event);
 			if (event.type === 'WRITE_LINE') {
 				setHighlightColumn(event.line);
 			} else if (event.type === 'END_PAGE') {
@@ -187,8 +186,6 @@ export default function App() {
 			const compiledOutput = compileJSX(code);
 
 			(async () => {
-				const fontRes = await fetch('/Geist-Regular.ttf');
-				const font = await fontRes.arrayBuffer();
 				const svg = await satori(compiledOutput, {
 					width: canvas.width,
 					height: canvas.height,
@@ -209,7 +206,6 @@ export default function App() {
 				});
 				const img = new Image();
 				img.onload = () => {
-					console.log(img);
 					ctx.reset();
 					ctx.fillStyle = 'white';
 					ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -222,6 +218,21 @@ export default function App() {
 			setError(err);
 		}
 	}, [code]);
+
+	const insertImage = useCallback(async (file: File, range: Monaco.Range) => {
+		const editor = editorRef.current;
+		if (!editor) return;
+		const dataUrl = await blobToDataURL(file);
+		console.log(await blobToImageDimensions(file));
+		const text = `<img src="${dataUrl}" />`;
+		editor.executeEdits('insert', [
+			{
+				range,
+				text,
+				forceMoveMarkers: true,
+			},
+		]);
+	}, []);
 
 	return (
 		<div className="flex flex-col items-center justify-center max-w-5xl">
@@ -310,10 +321,28 @@ export default function App() {
 					autoIndent: 'full',
 					autoClosingBrackets: 'always',
 					minimap: { enabled: false },
+					pasteAs: { enabled: false },
 				}}
 				onChange={onEditorChange}
+				wrapperProps={{
+					onDropCapture: (e: React.DragEvent<HTMLDivElement>) => {
+						const editor = editorRef.current;
+						if (!editor) return;
+						const file = e.dataTransfer.files[0];
+						if (file?.type.startsWith('image/')) {
+							const target = editor.getTargetAtClientPoint(
+								e.clientX,
+								e.clientY
+							);
+							if (!target?.range) return;
+							e.preventDefault();
+							insertImage(file, target.range);
+						}
+					},
+				}}
 				beforeMount={(monaco) => {
-					console.log(monaco);
+					monacoRef.current = monaco;
+
 					monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
 						{
 							jsx: monaco.languages.typescript.JsxEmit.React, // Enables JSX
@@ -334,7 +363,6 @@ export default function App() {
 						}
 					);
 
-					//console.log(csstypeDecl);
 					monaco.languages.typescript.typescriptDefaults.addExtraLib(
 						csstypeDecl,
 						'node_modules/csstype/index.d.ts'
@@ -353,6 +381,28 @@ export default function App() {
 					);
 				}}
 				onMount={(editor) => {
+					editorRef.current = editor;
+
+					editor.getContainerDomNode().addEventListener(
+						'paste',
+						(event) => {
+							const file = event.clipboardData?.files[0];
+							if (file?.type.startsWith('image/')) {
+								const target = editor.getPosition();
+								if (!target) return;
+								if (!monacoRef.current) return;
+								const range = new monacoRef.current.Range(
+									target.lineNumber,
+									target.column,
+									target.lineNumber,
+									target.column
+								);
+								insertImage(file, range);
+							}
+						},
+						true
+					);
+
 					//const vimMode = initVimMode(editor, document.getElementById('my-statusbar'))
 				}}
 			/>
