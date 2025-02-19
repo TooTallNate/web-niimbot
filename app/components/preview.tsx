@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { HTMLAttributes, RefObject } from 'react';
 
-export interface PreviewProps extends HTMLAttributes<HTMLCanvasElement> {
+export interface PreviewProps extends React.ComponentPropsWithoutRef<'canvas'> {
 	interval?: number;
 	highlightColumn?: number;
 	sourceRef: RefObject<HTMLCanvasElement | null>;
