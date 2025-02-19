@@ -1,6 +1,10 @@
+import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import debounce from 'debounce';
 import Editor from '@monaco-editor/react';
+//import { initVimMode } from 'monaco-vim';
+import satori from 'satori';
+import * as Babel from '@babel/standalone';
 import type { Route } from './+types/home';
 import { PrinterClient, type Bit } from '~/lib/printer';
 import { atkinson, bayer, floydsteinberg, threshold } from '~/lib/monochrome';
@@ -18,7 +22,27 @@ import {
 import { Label } from '~/components/ui/label';
 import { Input } from '~/components/ui/input';
 
+import csstypeDecl from 'csstype/index.d.ts?raw';
+import reactGlobalDecl from '~/assets/global.d.ts?raw';
+import reactIndexDecl from '~/assets/index.d.ts?raw';
+import jsxRuntimeDecl from '~/assets/jsx-runtime.d.ts?raw';
+import geistNormal from '~/assets/Geist-Regular.ttf?arraybuffer';
+import geistBold from '~/assets/Geist-Bold.ttf?arraybuffer';
+
 const DEFAULT_DITHER_ALGORITHM = 'atkinson';
+
+function compileJSX(jsx: string) {
+	// Wrap JSX inside an expression for Babel to process
+	const wrappedJSX = `(${jsx})`;
+
+	// Transpile JSX to JavaScript
+	const transformedCode = Babel.transform(wrappedJSX, {
+		presets: ['react'],
+	}).code;
+
+	// Execute the transformed code safely
+	return new Function('React', `return ${transformedCode}`)(React);
+}
 
 export function meta(_: Route.MetaArgs) {
 	return [
@@ -30,20 +54,21 @@ export function meta(_: Route.MetaArgs) {
 export default function App() {
 	const { theme } = useTheme();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const [code, setCode] =
-		useState(`const canvas = document.querySelector('canvas');
-const ctx = canvas.getContext('2d');
-
-// Use the Canvas API to create your label
-ctx.font = '24px sans-serif';
-ctx.fillStyle = 'black';
-ctx.textAlign = 'center';
-ctx.textBaseline = 'middle';
-ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
+	const [code, setCode] = useState(`<div style={{
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '100%',
+  height: '100%',
+}}>
+  <h1 style={{margin: 0}}>Hello World</h1>
+  <div>This is a paragraph.</div>
+</div>
 `);
 	const [error, setError] = useState<unknown>(null);
 	const [dimensions, setDimensions] = useState({ width: 313, height: 96 });
-	const [evalDelay, setEvalDelay] = useState(500);
+	const [evalDelay, setEvalDelay] = useState(100);
 	const [ditherAlgorithm, setDitherAlgorithm] = useState(
 		DEFAULT_DITHER_ALGORITHM
 	);
@@ -56,16 +81,18 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 		console.log('print');
 		const canvas = canvasRef.current;
 		if (!canvas) throw new Error('Failed to get canvas');
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d', { willReadFrequently: true });
 		if (!ctx) throw new Error('Failed to get 2d context');
 		const { width, height } = canvas;
 
 		// Create a new Canvas and apply dithering
 		const ditheredCanvas = new OffscreenCanvas(width, height);
-		const ditheredCtx = ditheredCanvas.getContext('2d');
+		const ditheredCtx = ditheredCanvas.getContext('2d', {
+			willReadFrequently: true,
+		});
 		if (!ditheredCtx) throw new Error('Failed to get 2d context');
 		const ditheredImageData = canvas
-			.getContext('2d')
+			.getContext('2d', { willReadFrequently: true })
 			?.getImageData(0, 0, width, height);
 		if (!ditheredImageData) return;
 		applyDither?.(ditheredImageData);
@@ -73,7 +100,9 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 
 		// Create a new rotated Canvas and draw the dithered Canvas
 		const rotated = new OffscreenCanvas(height, width);
-		const rotatedCtx = rotated.getContext('2d');
+		const rotatedCtx = rotated.getContext('2d', {
+			willReadFrequently: true,
+		});
 		if (!rotatedCtx) throw new Error('Failed to get 2d context');
 		rotatedCtx.fillStyle = 'white';
 		rotatedCtx.fillRect(0, 0, rotated.width, rotated.height);
@@ -151,16 +180,44 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 		const canvas = canvasRef.current;
 		if (!canvas) return;
 		setError(null);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d', { willReadFrequently: true });
 		if (!ctx) return;
 
-		ctx.reset();
-		ctx.fillStyle = 'white';
-		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		try {
-			// biome-ignore lint/security/noGlobalEval: <explanation>
-			// biome-ignore lint/style/noCommaOperator: <explanation>
-			(0, eval)(code);
+			const compiledOutput = compileJSX(code);
+
+			(async () => {
+				const fontRes = await fetch('/Geist-Regular.ttf');
+				const font = await fontRes.arrayBuffer();
+				const svg = await satori(compiledOutput, {
+					width: canvas.width,
+					height: canvas.height,
+					fonts: [
+						{
+							name: 'Geist',
+							data: geistNormal,
+							weight: 400,
+							style: 'normal',
+						},
+						{
+							name: 'Geist',
+							data: geistBold,
+							weight: 700,
+							style: 'normal',
+						},
+					],
+				});
+				const img = new Image();
+				img.onload = () => {
+					console.log(img);
+					ctx.reset();
+					ctx.fillStyle = 'white';
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.drawImage(img, 0, 0);
+				};
+				const blob = new Blob([svg], { type: 'image/svg+xml' });
+				img.src = URL.createObjectURL(blob);
+			})();
 		} catch (err) {
 			setError(err);
 		}
@@ -182,7 +239,7 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 				<div className="flex flex-col gap-1 items-center">
 					<h2 className="text-xl font-bold">Canvas</h2>
 					<canvas
-						className="rounded-2xl shadow-lg border"
+						className="rounded-2xl shadow-lg border bg-white"
 						ref={canvasRef}
 						width={dimensions.width}
 						height={dimensions.height}
@@ -191,7 +248,7 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 				<div className="flex flex-col gap-1 items-center">
 					<h2 className="text-xl font-bold">Preview</h2>
 					<Preview
-						className="rounded-2xl shadow-lg border"
+						className="rounded-2xl shadow-lg border bg-white"
 						highlightColumn={highlightColumn}
 						width={dimensions.width}
 						height={dimensions.height}
@@ -248,9 +305,56 @@ ctx.fillText('Hello World', canvas.width / 2, canvas.height / 2);
 				className="border shadow mt-4"
 				defaultLanguage="typescript"
 				defaultValue={code}
-				theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
-				options={{ minimap: { enabled: false } }}
+				theme={theme === 'light' ? 'light' : 'vs-dark'}
+				options={{
+					autoIndent: 'full',
+					autoClosingBrackets: 'always',
+					minimap: { enabled: false },
+				}}
 				onChange={onEditorChange}
+				beforeMount={(monaco) => {
+					console.log(monaco);
+					monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
+						{
+							jsx: monaco.languages.typescript.JsxEmit.React, // Enables JSX
+							jsxFactory: 'React.createElement', // Set JSX factory (optional, can be replaced)
+							allowJs: true, // Allow JavaScript
+							target: monaco.languages.typescript.ScriptTarget
+								.ESNext, // Modern JS
+							moduleResolution:
+								monaco.languages.typescript.ModuleResolutionKind
+									.NodeJs,
+							strict: true, // Enforce strict mode for better autocomplete
+							allowNonTsExtensions: true,
+							module: monaco.languages.typescript.ModuleKind
+								.CommonJS,
+							noEmit: true,
+							typeRoots: ['node_modules/@types'],
+							lib: ['DOM', 'DOM.Iterable', 'ES2022'],
+						}
+					);
+
+					//console.log(csstypeDecl);
+					monaco.languages.typescript.typescriptDefaults.addExtraLib(
+						csstypeDecl,
+						'node_modules/csstype/index.d.ts'
+					);
+					monaco.languages.typescript.typescriptDefaults.addExtraLib(
+						reactGlobalDecl,
+						'node_modules/@types/react/global.d.ts'
+					);
+					monaco.languages.typescript.typescriptDefaults.addExtraLib(
+						reactIndexDecl,
+						'node_modules/@types/react/index.d.ts'
+					);
+					monaco.languages.typescript.typescriptDefaults.addExtraLib(
+						jsxRuntimeDecl,
+						'node_modules/@types/react/jsx-runtime.d.ts'
+					);
+				}}
+				onMount={(editor) => {
+					//const vimMode = initVimMode(editor, document.getElementById('my-statusbar'))
+				}}
 			/>
 		</div>
 	);
