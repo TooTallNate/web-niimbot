@@ -2,10 +2,9 @@ import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import debounce from 'debounce';
 import Editor from '@monaco-editor/react';
-import type * as Monaco from 'monaco-editor';
-//import { initVimMode } from 'monaco-vim';
 import satori from 'satori';
 import * as Babel from '@babel/standalone';
+import type * as Monaco from 'monaco-editor';
 import type { Route } from './+types/home';
 import { PrinterClient, type Bit } from '~/lib/printer';
 import { atkinson, bayer, floydsteinberg, threshold } from '~/lib/monochrome';
@@ -34,6 +33,8 @@ import {
 	blobToImageDimensions,
 	pasteSvgAsBlob,
 } from '~/lib/util';
+import { useMonacoVim } from '~/hooks/use-monaco-vim';
+import { Checkbox } from '~/components/ui/checkbox';
 
 const DEFAULT_DITHER_ALGORITHM = 'atkinson';
 
@@ -60,6 +61,7 @@ export function meta(_: Route.MetaArgs) {
 export default function App() {
 	const { theme } = useTheme();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const statusBarRef = useRef<HTMLDivElement>(null);
 	const [code, setCode] = useState(`<div style={{
   display: 'flex',
   flexDirection: 'column',
@@ -84,6 +86,7 @@ export default function App() {
 	const [highlightColumn, setHighlightColumn] = useState<number | undefined>(
 		undefined
 	);
+	const vim = useMonacoVim(editorRef, statusBarRef);
 
 	const print = async () => {
 		const canvas = canvasRef.current;
@@ -248,7 +251,7 @@ export default function App() {
 	}, []);
 
 	return (
-		<div className="flex flex-col items-center justify-center max-w-5xl">
+		<div className="flex flex-col items-center justify-center max-w-5xl h-full">
 			<Header />
 
 			<Button
@@ -322,107 +325,121 @@ export default function App() {
 				</div>
 			</div>
 
+			<div className="flex items-center space-x-2">
+				<Checkbox
+					id="vim"
+					checked={vim.enabled}
+					onCheckedChange={(v) => vim.setEnabled(v === true)}
+				/>
+				<label
+					htmlFor="vim"
+					className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+				>
+					Vim mode
+				</label>
+			</div>
+
 			{error ? String(error) : null}
 
-			<Editor
-				height={400}
-				className="border shadow mt-4"
-				defaultLanguage="typescript"
-				defaultValue={code}
-				theme={theme === 'light' ? 'light' : 'vs-dark'}
-				options={{
-					autoIndent: 'full',
-					autoClosingBrackets: 'always',
-					minimap: { enabled: false },
-					pasteAs: { enabled: false },
-				}}
-				onChange={onEditorChange}
-				wrapperProps={{
-					onDropCapture: (e: React.DragEvent<HTMLDivElement>) => {
-						const editor = editorRef.current;
-						if (!editor) return;
-						const file = e.dataTransfer.files[0];
-						if (file?.type.startsWith('image/')) {
-							const target = editor.getTargetAtClientPoint(
-								e.clientX,
-								e.clientY
-							);
-							if (!target?.range) return;
-							e.preventDefault();
-							insertImage(file, target.range);
-						}
-					},
-				}}
-				beforeMount={(monaco) => {
-					monacoRef.current = monaco;
-
-					monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
-						{
-							jsx: monaco.languages.typescript.JsxEmit.React, // Enables JSX
-							jsxFactory: 'React.createElement', // Set JSX factory (optional, can be replaced)
-							allowJs: true, // Allow JavaScript
-							target: monaco.languages.typescript.ScriptTarget
-								.ESNext, // Modern JS
-							moduleResolution:
-								monaco.languages.typescript.ModuleResolutionKind
-									.NodeJs,
-							strict: true, // Enforce strict mode for better autocomplete
-							allowNonTsExtensions: true,
-							module: monaco.languages.typescript.ModuleKind
-								.CommonJS,
-							noEmit: true,
-							typeRoots: ['node_modules/@types'],
-							lib: ['DOM', 'DOM.Iterable', 'ES2022'],
-						}
-					);
-
-					monaco.languages.typescript.typescriptDefaults.addExtraLib(
-						csstypeDecl,
-						'node_modules/csstype/index.d.ts'
-					);
-					monaco.languages.typescript.typescriptDefaults.addExtraLib(
-						reactGlobalDecl,
-						'node_modules/@types/react/global.d.ts'
-					);
-					monaco.languages.typescript.typescriptDefaults.addExtraLib(
-						reactIndexDecl,
-						'node_modules/@types/react/index.d.ts'
-					);
-					monaco.languages.typescript.typescriptDefaults.addExtraLib(
-						jsxRuntimeDecl,
-						'node_modules/@types/react/jsx-runtime.d.ts'
-					);
-				}}
-				onMount={(editor) => {
-					editorRef.current = editor;
-
-					editor.getContainerDomNode().addEventListener(
-						'paste',
-						(event) => {
-							const file =
-								event.clipboardData?.files[0] ||
-								pasteSvgAsBlob(event);
+			<div className="border shadow mt-4 w-full">
+				<Editor
+					height={400}
+					defaultLanguage="typescript"
+					defaultValue={code}
+					theme={theme === 'light' ? 'light' : 'vs-dark'}
+					options={{
+						autoIndent: 'full',
+						autoClosingBrackets: 'always',
+						minimap: { enabled: false },
+						pasteAs: { enabled: false },
+					}}
+					onChange={onEditorChange}
+					wrapperProps={{
+						onDropCapture: (e: React.DragEvent<HTMLDivElement>) => {
+							const editor = editorRef.current;
+							if (!editor) return;
+							const file = e.dataTransfer.files[0];
 							if (file?.type.startsWith('image/')) {
-								const target = editor.getPosition();
-								if (!target) return;
-								if (!monacoRef.current) return;
-								event.preventDefault();
-								event.stopPropagation();
-								const range = new monacoRef.current.Range(
-									target.lineNumber,
-									target.column,
-									target.lineNumber,
-									target.column
+								const target = editor.getTargetAtClientPoint(
+									e.clientX,
+									e.clientY
 								);
-								insertImage(file, range);
+								if (!target?.range) return;
+								e.preventDefault();
+								insertImage(file, target.range);
 							}
 						},
-						true
-					);
+					}}
+					beforeMount={(monaco) => {
+						monacoRef.current = monaco;
 
-					//const vimMode = initVimMode(editor, document.getElementById('my-statusbar'))
-				}}
-			/>
+						monaco.languages.typescript.typescriptDefaults.setCompilerOptions(
+							{
+								jsx: monaco.languages.typescript.JsxEmit.React, // Enables JSX
+								jsxFactory: 'React.createElement', // Set JSX factory (optional, can be replaced)
+								allowJs: true, // Allow JavaScript
+								target: monaco.languages.typescript.ScriptTarget
+									.ESNext, // Modern JS
+								moduleResolution:
+									monaco.languages.typescript
+										.ModuleResolutionKind.NodeJs,
+								strict: true, // Enforce strict mode for better autocomplete
+								allowNonTsExtensions: true,
+								module: monaco.languages.typescript.ModuleKind
+									.CommonJS,
+								noEmit: true,
+								typeRoots: ['node_modules/@types'],
+								lib: ['DOM', 'DOM.Iterable', 'ES2022'],
+							}
+						);
+
+						monaco.languages.typescript.typescriptDefaults.addExtraLib(
+							csstypeDecl,
+							'node_modules/csstype/index.d.ts'
+						);
+						monaco.languages.typescript.typescriptDefaults.addExtraLib(
+							reactGlobalDecl,
+							'node_modules/@types/react/global.d.ts'
+						);
+						monaco.languages.typescript.typescriptDefaults.addExtraLib(
+							reactIndexDecl,
+							'node_modules/@types/react/index.d.ts'
+						);
+						monaco.languages.typescript.typescriptDefaults.addExtraLib(
+							jsxRuntimeDecl,
+							'node_modules/@types/react/jsx-runtime.d.ts'
+						);
+					}}
+					onMount={(editor) => {
+						editorRef.current = editor;
+
+						editor.getContainerDomNode().addEventListener(
+							'paste',
+							(event) => {
+								const file =
+									event.clipboardData?.files[0] ||
+									pasteSvgAsBlob(event);
+								if (file?.type.startsWith('image/')) {
+									const target = editor.getPosition();
+									if (!target) return;
+									if (!monacoRef.current) return;
+									event.preventDefault();
+									event.stopPropagation();
+									const range = new monacoRef.current.Range(
+										target.lineNumber,
+										target.column,
+										target.lineNumber,
+										target.column
+									);
+									insertImage(file, range);
+								}
+							},
+							true
+						);
+					}}
+				/>
+				<div ref={statusBarRef} className="w-full font-mono" />
+			</div>
 		</div>
 	);
 }
